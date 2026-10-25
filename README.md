@@ -10,8 +10,66 @@ Applications pin one version in `gradle.properties` and upgrade deliberately.
 | Module | Purpose |
 |---|---|
 | `fhg-kit-bom` | Bill of materials — import it and omit versions on the other modules |
-| `fhg-kit-llm` | TODO: one line on what this module offers |
+| `fhg-kit-llm` | LLM usage accounting: a content-free `AiUsageEvent` per model call, `AiUsageRecorder` port (no-op, logging, composite, fail-safe), per-million-token `PriceTable` with `CostEstimator`, and an `AiUsageTracker` that wraps the call and records the event for you |
 | `fhg-kit-spring-boot-starter` | Spring Boot auto-configuration for the modules above (the only module that knows Spring) |
+
+## fhg-kit-llm in 30 seconds
+
+Plain Java, no framework. The kit never talks to a provider: you make the call, you hand back the facts only the call site knows (served model, tokens), the kit measures, classifies and records.
+
+```java
+import io.github.fhgomes.fhgkit.llm.*;
+
+// 1. Prices come from you (or from the starter's properties). Exact match on id/alias, never by prefix.
+PriceTable prices = new InMemoryPriceTable(
+        List.of(new ModelPrice("model-a", Set.of("model-a-2026-01-01"), new BigDecimal("3.00"), new BigDecimal("15.00"), 128_000)),
+        "USD", "provider price list", LocalDate.of(2026, 1, 1));
+
+// 2. Where events go: your ledger adapter, a log line, or several at once. `safe` means a broken ledger never breaks a call.
+AiUsageRecorder recorder = AiUsageRecorders.composite(AiUsageRecorders.logging(), myLedgerAdapter);
+AiUsageTracker tracker = new AiUsageTracker(recorder, new DefaultCostEstimator(prices), Clock.systemUTC());
+
+// 3. Wrap the call. Latency, outcome, tokens, cost snapshot and context end up in one AiUsageEvent.
+String summary = tracker.track(
+        AiCallContext.builder("summarize").tenantId(tenantId).correlationId(requestId).attribute("promptVersion", "v2").build(),
+        new ModelRef("my-provider", "model-a"),
+        () -> {
+            var response = client.chat(prompt);                       // your SDK, your exceptions
+            if (response.refused()) throw new ModelRefusedException("blocked by provider");   // -> REFUSED
+            return AiCallResult.of(response.text(), new ModelRef("my-provider", response.model()),
+                    TokenUsage.exact(response.inputTokens(), response.outputTokens()));
+        });
+```
+
+Outcomes: `OK`, `FAILED_TIMEOUT` (a `TimeoutException`/`HttpTimeoutException` anywhere in the cause chain), `INVALID_OUTPUT` (`InvalidModelOutputException`), `REFUSED` (`ModelRefusedException`), `FAILED_UPSTREAM` (anything else). The exception is always rethrown; the event carries only the exception class name, never a message or prompt content.
+
+Cost is `BigDecimal` at scale 6, `HALF_UP`, per million tokens. `CostEstimate.status()` says whether the number means anything: `ESTIMATED`, `UNKNOWN_MODEL` (not in the table) or `UNKNOWN_TOKENS` (tokens estimated as zero, i.e. not known). Leave the tracker's estimator `null` to store events unpriced and price them on read.
+
+### Starter: `fhg.kit.llm.pricing`
+
+With `fhg-kit-spring-boot-starter` on the classpath you get `PriceTable`, `CostEstimator`, a logging `AiUsageRecorder` and an `AiUsageTracker` as beans (each `@ConditionalOnMissingBean`, so declaring your own `AiUsageRecorder` bean replaces the default). `fhg.kit.llm.enabled=false` turns all of them off.
+
+```yaml
+fhg:
+  kit:
+    llm:
+      enabled: true
+      pricing:
+        currency: USD
+        source: "provider price list"      # label for humans
+        as-of: 2026-01-01                  # date the prices were valid at
+        models:
+          - id: model-a
+            aliases: [model-a-2026-01-01, gateway/model-a]
+            input-per-mtok: 3.00
+            output-per-mtok: 15.00
+            context-window: 128000
+          - id: model-tiny
+            input-per-mtok: 0.10
+            output-per-mtok: 0.40
+```
+
+An entry with only one side of the price, or an id/alias declared twice, fails the context at startup instead of producing a silently wrong estimate.
 
 ## Consume
 
