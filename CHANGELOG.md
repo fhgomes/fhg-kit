@@ -3,6 +3,8 @@
 All notable changes to this library are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-25
 ### Added
 - `fhg-kit-llm`: LLM usage accounting, extracted from three internal applications.
   - `AiUsageEvent` (content-free usage ledger row with fluent `Builder`), `ModelRef`, `TokenUsage`, `AiCallOutcome`.
@@ -17,6 +19,4 @@ All notable changes to this library are documented here. Format: [Keep a Changel
   and auto-configured `PriceTable`, `CostEstimator`, logging `AiUsageRecorder` and `AiUsageTracker` beans,
   all `@ConditionalOnMissingBean`, gated by `fhg.kit.enabled` and `fhg.kit.llm.enabled`.
 
-## [0.1.0] - 2026-10-25
-### Added
 - Initial scaffold via projects-machine (`java-lib` template).
