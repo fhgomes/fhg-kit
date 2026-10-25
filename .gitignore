@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+bin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — NEVER commit. Publishing credentials come from env vars (GITHUB_ACTOR/GITHUB_TOKEN) or ~/.gradle/gradle.properties.
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.jks
