@@ -31,12 +31,14 @@ Each core module lives in `io.github.fhgomes.fhgkit.<module>` and is `@NullMarke
 | Release | bump `libVersion` in `gradle.properties`, move `[Unreleased]` in `CHANGELOG.md`, commit, `git tag v<libVersion>`, push the tag; `publish.yml` publishes to GitHub Packages |
 
 Build as a normal user, never with `sudo`. Tests run with JUnit 6 + AssertJ; there is no database, no container, no
-network in the test suite and there must never be.
+network in the test suite and there must never be. One exception: `fhg-kit-llm`'s `ledger` package tests talk to a JDK
+`HttpServer` bound to loopback inside the test (no outside host, no fixed port).
 
 ## Conventions (Do-Not-Break)
 
 1. **Core modules are framework-free.** Java 21 standard library + `org.jspecify` + `slf4j-api` only. No Spring,
-   Jackson, Lombok, JPA, Micrometer or HTTP client in a core module. Spring wiring goes in the starter, and only there.
+   Jackson, Lombok, JPA, Micrometer or third-party HTTP client in a core module (the JDK's `java.net.http` is allowed: the
+   `ledger` package uses it for the ai-ledger contract client). Spring wiring goes in the starter, and only there.
 2. **Public API = records, interfaces and small final classes.** Every public type has Javadoc. Validation happens in
    canonical constructors; collections are defensively copied and unmodifiable.
 3. **Ports, not implementations.** Anything an application must plug in (persistence, metrics, transport) is an

@@ -10,7 +10,7 @@ Applications pin one version in `gradle.properties` and upgrade deliberately.
 | Module | Purpose |
 |---|---|
 | `fhg-kit-bom` | Bill of materials — import it and omit versions on the other modules |
-| `fhg-kit-llm` | LLM usage accounting: a content-free `AiUsageEvent` per model call, `AiUsageRecorder` port (no-op, logging, composite, fail-safe), per-million-token `PriceTable` with `CostEstimator`, and an `AiUsageTracker` that wraps the call and records the event for you |
+| `fhg-kit-llm` | LLM usage accounting: a content-free `AiUsageEvent` per model call, `AiUsageRecorder` port (no-op, logging, composite, fail-safe), per-million-token `PriceTable` with `CostEstimator`, an `AiUsageTracker` that wraps the call and records the event for you, and a `LedgerClient` that ships the events to an AI usage ledger service |
 | `fhg-kit-spring-boot-starter` | Spring Boot auto-configuration for the modules above (the only module that knows Spring) |
 
 ## fhg-kit-llm in 30 seconds
@@ -71,6 +71,28 @@ fhg:
 
 An entry with only one side of the price, or an id/alias declared twice, fails the context at startup instead of producing a silently wrong estimate.
 
+### Shipping events to a ledger: `LedgerClient`
+
+`io.github.fhgomes.fhgkit.llm.ledger` sends batches of `AiUsageEvent` to an AI usage ledger service over HTTP (`java.net.http`, no JSON library, no framework). The client does one request per call and **never retries**: you keep a cursor over your own event source and move it only after `send` returns.
+
+```java
+import io.github.fhgomes.fhgkit.llm.ledger.*;
+
+// baseUri must end with '/': the ingest path "api/integration/v1/usage-events" is resolved against it.
+var config = new LedgerClientConfig(URI.create("https://ledger.example.invalid/ai-ledger/"), apiKey, Duration.ofSeconds(10));
+var client = new LedgerClient(config);
+
+try {
+    SendResult result = client.send(batch);          // 1..500 events
+    // result.accepted(), result.duplicates() (already stored, ignored), result.rejected() (id + reason, do not resend)
+    cursor.advanceTo(lastEventOf(batch));
+} catch (LedgerClientException e) {
+    // transport error, timeout, non-2xx (e.httpStatus()) or unreadable answer: keep the cursor, send the same batch later
+}
+```
+
+The ledger de-duplicates by event id, so resending a batch whose first attempt actually arrived is safe. The key is only sent in the `Authorization` header; it never appears in exception messages, `toString()` or logs, and redirects are not followed. A batch over 500 events throws `IllegalArgumentException` before any request; an empty batch sends nothing.
+
 ## Consume
 
 ```kotlin
@@ -95,7 +117,7 @@ dependencies {
 }
 ```
 
-`gradle.properties` of the app: `fhgKitVersion=0.1.0`.
+`gradle.properties` of the app: `fhgKitVersion=0.2.0`.
 
 ## Build
 
