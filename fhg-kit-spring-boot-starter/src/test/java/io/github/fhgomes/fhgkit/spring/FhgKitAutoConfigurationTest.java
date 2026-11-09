@@ -126,6 +126,36 @@ class FhgKitAutoConfigurationTest {
     }
 
     @Test
+    @DisplayName("cache-read-per-mtok / cache-write-per-mtok should bind and price a cached call at the cache rates")
+    void cacheRatesShouldBind() {
+        runner.withPropertyValues(
+                "fhg.kit.llm.pricing.models[0].id=model-c",
+                "fhg.kit.llm.pricing.models[0].input-per-mtok=3.00",
+                "fhg.kit.llm.pricing.models[0].output-per-mtok=15.00",
+                "fhg.kit.llm.pricing.models[0].cache-read-per-mtok=0.30",
+                "fhg.kit.llm.pricing.models[0].cache-write-per-mtok=3.75",
+                "fhg.kit.llm.pricing.models[1].id=model-d",
+                "fhg.kit.llm.pricing.models[1].input-per-mtok=3.00",
+                "fhg.kit.llm.pricing.models[1].output-per-mtok=15.00")
+            .run(ctx -> {
+                var table = ctx.getBean(PriceTable.class);
+                var priced = table.lookup(new ModelRef("p", "model-c")).orElseThrow();
+                assertThat(priced.cacheReadPerMtok()).isEqualByComparingTo("0.30");
+                assertThat(priced.cacheWritePerMtok()).isEqualByComparingTo("3.75");
+                var bare = table.lookup(new ModelRef("p", "model-d")).orElseThrow();
+                assertThat(bare.cacheReadPerMtok()).isNull();
+                assertThat(bare.cacheWritePerMtok()).isNull();
+
+                var estimator = ctx.getBean(CostEstimator.class);
+                var usage = TokenUsage.exact(36_000, 100, 35_000, 900);
+                assertThat(estimator.estimate(new ModelRef("p", "model-c"), usage).total())
+                    .isEqualTo(new BigDecimal("0.015675"));
+                assertThat(estimator.estimate(new ModelRef("p", "model-d"), usage).total())
+                    .isEqualTo(new BigDecimal("0.109500"));
+            });
+    }
+
+    @Test
     @DisplayName("a model entry missing one side of the price should fail the context with a clear message")
     void oneSidedPriceShouldFailStartup() {
         runner.withPropertyValues(

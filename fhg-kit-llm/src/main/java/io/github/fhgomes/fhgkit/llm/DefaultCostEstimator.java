@@ -8,7 +8,10 @@ import java.util.Objects;
  * {@link CostEstimator} that applies per-million-token prices from a {@link PriceTable}.
  *
  * <p>Arithmetic is {@link BigDecimal} at scale {@value #SCALE} with {@link RoundingMode#HALF_UP}:
- * {@code cost = price * tokens / 1_000_000}, rounded once per side. Statuses:
+ * {@code cost = price * tokens / 1_000_000}, rounded once per side. On the input side the tokens that
+ * {@link TokenUsage#cacheRead() were read from} or {@link TokenUsage#cacheWrite() written to} the prompt cache are
+ * priced at {@link ModelPrice#effectiveCacheReadPerMtok()} / {@link ModelPrice#effectiveCacheWritePerMtok()}
+ * (the input rate when the price declares no cache rate) and the rest at the input rate. Statuses:
  * <ul>
  *   <li>{@link CostEstimate.Status#UNKNOWN_MODEL} when the table has no entry for the model;</li>
  *   <li>{@link CostEstimate.Status#UNKNOWN_TOKENS} when the tokens are {@link TokenUsage#estimated() estimated}
@@ -47,10 +50,21 @@ public final class DefaultCostEstimator implements CostEstimator {
             return new CostEstimate(
                     CostEstimate.Status.UNKNOWN_TOKENS, table.currency(), ZERO, ZERO, ZERO, matched.id());
         }
-        BigDecimal input = cost(matched.inputPerMtok(), tokens.input());
+        BigDecimal input = inputCost(matched, tokens);
         BigDecimal output = cost(matched.outputPerMtok(), tokens.output());
         return new CostEstimate(
                 CostEstimate.Status.ESTIMATED, table.currency(), input, output, input.add(output), matched.id());
+    }
+
+    /**
+     * Input side: the uncached part at the input rate, the cache parts at their rates (an absent cache rate means
+     * the input rate), summed before the single rounding. Without a cache split this is the 0.2.0 formula.
+     */
+    private static BigDecimal inputCost(ModelPrice price, TokenUsage tokens) {
+        BigDecimal sum = price.inputPerMtok().multiply(BigDecimal.valueOf(tokens.uncachedInput()))
+                .add(price.effectiveCacheReadPerMtok().multiply(BigDecimal.valueOf(tokens.cacheRead())))
+                .add(price.effectiveCacheWritePerMtok().multiply(BigDecimal.valueOf(tokens.cacheWrite())));
+        return sum.divide(TOKENS_PER_MTOK, SCALE, RoundingMode.HALF_UP);
     }
 
     private static BigDecimal cost(BigDecimal pricePerMtok, int tokens) {

@@ -10,7 +10,7 @@ Applications pin one version in `gradle.properties` and upgrade deliberately.
 | Module | Purpose |
 |---|---|
 | `fhg-kit-bom` | Bill of materials — import it and omit versions on the other modules |
-| `fhg-kit-llm` | LLM usage accounting: a content-free `AiUsageEvent` per model call, `AiUsageRecorder` port (no-op, logging, composite, fail-safe), per-million-token `PriceTable` with `CostEstimator`, an `AiUsageTracker` that wraps the call and records the event for you, and a `LedgerClient` that ships the events to an AI usage ledger service |
+| `fhg-kit-llm` | LLM usage accounting: a content-free `AiUsageEvent` per model call, `AiUsageRecorder` port (no-op, logging, composite, fail-safe), per-million-token `PriceTable` with `CostEstimator`, an `AiUsageTracker` that wraps the call and records the event for you, a `LedgerClient` that ships the events to an AI usage ledger service, and a `LedgerExporter` that runs the export loop over your own table |
 | `fhg-kit-spring-boot-starter` | Spring Boot auto-configuration for the modules above (the only module that knows Spring) |
 
 ## fhg-kit-llm in 30 seconds
@@ -93,6 +93,43 @@ try {
 
 The ledger de-duplicates by event id, so resending a batch whose first attempt actually arrived is safe. The key is only sent in the `Authorization` header; it never appears in exception messages, `toString()` or logs, and redirects are not followed. A batch over 500 events throws `IllegalArgumentException` before any request; an empty batch sends nothing.
 
+### Cache-aware cost
+
+Prompt caching changes the price of the same prompt by an order of magnitude, so `TokenUsage` can carry the split. `input` is always the **whole** prompt; `cacheRead` and `cacheWrite` are parts of it.
+
+```java
+// 36 000 prompt tokens, of which 35 000 were read from the cache and 900 written to it
+TokenUsage usage = TokenUsage.exact(36_000, 100, 35_000, 900);
+
+ModelPrice price = new ModelPrice("model-a", Set.of(), new BigDecimal("3.00"), new BigDecimal("15.00"), null,
+        new BigDecimal("0.30"), new BigDecimal("3.75"));          // cache read / cache write per Mtok
+// (100 x 3.00 + 35 000 x 0.30 + 900 x 3.75 + 100 x 15.00) / 1e6 = 0.015675   (0.1095 without the split)
+```
+
+A cache rate you do not declare falls back to the input rate, so a missing price never makes a call look cheaper. In the starter: `cache-read-per-mtok` / `cache-write-per-mtok` next to `input-per-mtok`. The ledger writer sends `tokens.cacheRead` / `tokens.cacheWrite` only when above zero.
+
+### Exporting a table to the ledger: `LedgerExporter`
+
+If your application already writes one row per model call, that table is the outbox: `io.github.fhgomes.fhgkit.llm.ledger.export` runs the export loop over it. You provide three small ports; the kit provides the loop. No scheduler (you call `runOnce()` from your timer, behind your flag) and no SQL.
+
+```java
+import io.github.fhgomes.fhgkit.llm.ledger.export.*;
+
+ExportSource<CallRow> source = new ExportSource<>() {             // your table
+    public List<CallRow> after(ExportCursor cursor, Instant settledBefore, int limit) { /* rows strictly after (createdAt, id), oldest first, createdAt < settledBefore */ }
+    public ExportCursor cursorOf(CallRow row) { return new ExportCursor(row.createdAt(), row.id()); }
+};
+ExportCursorStore store = /* load() / save(cursor): a one-row table */;
+ExportRowMapper<CallRow> mapper = row -> Optional.of(AiUsageEvent.builder()
+        .id(ExportEventIds.stable("my-app", "llm_call", row.id()))   // stable per row: a resend is a duplicate, never a second row
+        /* ... */ .build());
+
+var exporter = new LedgerExporter<>(ledgerClient, source, store, mapper, ExporterConfig.defaults());
+ExportRunResult result = exporter.runOnce();    // every 5 minutes, say
+```
+
+One pass sends up to 20 batches of 200 rows and saves the cursor after each 2xx. A batch the ledger refuses as a whole (400, 413, 422) is skipped so the export cannot get stuck; 401/403 (`StopReason.AUTH`) and 5xx, 429 or network errors (`UNAVAILABLE`) stop the pass with the cursor kept, and the next pass resends the same batch. A row the mapper cannot map (empty `Optional` or `IllegalArgumentException`) is counted in `skippedRows` and passed over. A send failure never throws; a failure of your source or store does, so you log it.
+
 ## Consume
 
 ```kotlin
@@ -117,7 +154,7 @@ dependencies {
 }
 ```
 
-`gradle.properties` of the app: `fhgKitVersion=0.2.0`.
+`gradle.properties` of the app: `fhgKitVersion=0.3.0`.
 
 ## Build
 

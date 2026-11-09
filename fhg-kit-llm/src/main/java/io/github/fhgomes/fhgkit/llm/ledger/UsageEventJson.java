@@ -17,6 +17,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Writer: field order and names follow the contract, money is a plain decimal string (never an exponent),
  * absent values are written as {@code null}, attributes are sorted by key so the output is deterministic.
+ * {@code tokens.cacheRead} and {@code tokens.cacheWrite} (contract v1.1, additive) are written only when above zero,
+ * so an event without a cache split is byte-identical to the 0.2.0 output.
  */
 final class UsageEventJson {
 
@@ -56,7 +58,14 @@ final class UsageEventJson {
         string(out, e.outcome().name());
         out.append(",\"tokens\":{\"input\":").append(e.tokens().input())
                 .append(",\"output\":").append(e.tokens().output())
-                .append(",\"estimated\":").append(e.tokens().estimated()).append('}');
+                .append(",\"estimated\":").append(e.tokens().estimated());
+        if (e.tokens().cacheRead() > 0) {
+            out.append(",\"cacheRead\":").append(e.tokens().cacheRead());
+        }
+        if (e.tokens().cacheWrite() > 0) {
+            out.append(",\"cacheWrite\":").append(e.tokens().cacheWrite());
+        }
+        out.append('}');
         out.append(",\"latencyMs\":").append(e.latency().toMillis());
         out.append(",\"tenantId\":");
         nullableString(out, e.tenantId());

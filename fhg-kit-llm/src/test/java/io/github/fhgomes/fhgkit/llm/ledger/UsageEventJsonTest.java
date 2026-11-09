@@ -190,4 +190,20 @@ class UsageEventJsonTest {
         assertThatIllegalArgumentException().isThrownBy(() -> UsageEventJson.parseResponse(202, body))
                 .withMessageContaining("nesting too deep");
     }
+
+    @Test
+    @DisplayName("should write tokens.cacheRead and cacheWrite only when above zero")
+    void shouldWriteCachePartsOnlyWhenPositive() {
+        String none = UsageEventJson.write(List.of(base().tokens(TokenUsage.exact(10, 2)).build()));
+        String both = UsageEventJson.write(List.of(base().tokens(TokenUsage.exact(36000, 100, 35000, 900)).build()));
+        String readOnly = UsageEventJson.write(List.of(base().tokens(TokenUsage.exact(36000, 100, 35000, 0)).build()));
+        String writeOnly = UsageEventJson.write(List.of(base().tokens(TokenUsage.exact(36000, 100, 0, 900)).build()));
+
+        assertThat(none).contains("\"tokens\":{\"input\":10,\"output\":2,\"estimated\":false},")
+                .doesNotContain("cacheRead").doesNotContain("cacheWrite");
+        assertThat(both).contains(
+                "\"tokens\":{\"input\":36000,\"output\":100,\"estimated\":false,\"cacheRead\":35000,\"cacheWrite\":900},");
+        assertThat(readOnly).contains("\"estimated\":false,\"cacheRead\":35000}").doesNotContain("cacheWrite");
+        assertThat(writeOnly).contains("\"estimated\":false,\"cacheWrite\":900}").doesNotContain("cacheRead");
+    }
 }

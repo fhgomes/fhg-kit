@@ -31,7 +31,7 @@ Each core module lives in `io.github.fhgomes.fhgkit.<module>` and is `@NullMarke
 | Release | bump `libVersion` in `gradle.properties`, move `[Unreleased]` in `CHANGELOG.md`, commit, `git tag v<libVersion>`, push the tag; `publish.yml` publishes to GitHub Packages |
 
 Build as a normal user, never with `sudo`. Tests run with JUnit 6 + AssertJ; there is no database, no container, no
-network in the test suite and there must never be. One exception: `fhg-kit-llm`'s `ledger` package tests talk to a JDK
+network in the test suite and there must never be. One exception: `fhg-kit-llm`'s `ledger` package tests (including `ledger.export`) talk to a JDK
 `HttpServer` bound to loopback inside the test (no outside host, no fixed port).
 
 ## Conventions (Do-Not-Break)
