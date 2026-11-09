@@ -43,4 +43,40 @@ class ModelPriceTest {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> ModelPrice.of("", BigDecimal.ONE, BigDecimal.ONE));
     }
+
+    @Test
+    @DisplayName("should keep the 5-argument constructor and of(): cache rates absent")
+    void shouldKeepOldApiWithoutCacheRates() {
+        var price = new ModelPrice("m", Set.of(), new BigDecimal("3.00"), new BigDecimal("15.00"), null);
+
+        assertThat(price.cacheReadPerMtok()).isNull();
+        assertThat(price.cacheWritePerMtok()).isNull();
+        assertThat(ModelPrice.of("m", BigDecimal.ONE, BigDecimal.TEN).cacheReadPerMtok()).isNull();
+        assertThat(price).isEqualTo(new ModelPrice("m", Set.of(), new BigDecimal("3.00"), new BigDecimal("15.00"),
+                null, null, null));
+    }
+
+    @Test
+    @DisplayName("should fall back to the input rate when a cache rate is absent, never to something cheaper")
+    void shouldFallBackToInputRate() {
+        var bare = ModelPrice.of("m", new BigDecimal("3.00"), new BigDecimal("15.00"));
+        var full = bare.withCacheRates(new BigDecimal("0.30"), new BigDecimal("3.75"));
+        var readOnly = bare.withCacheRates(new BigDecimal("0.30"), null);
+
+        assertThat(bare.effectiveCacheReadPerMtok()).isEqualByComparingTo("3.00");
+        assertThat(bare.effectiveCacheWritePerMtok()).isEqualByComparingTo("3.00");
+        assertThat(full.effectiveCacheReadPerMtok()).isEqualByComparingTo("0.30");
+        assertThat(full.effectiveCacheWritePerMtok()).isEqualByComparingTo("3.75");
+        assertThat(readOnly.effectiveCacheReadPerMtok()).isEqualByComparingTo("0.30");
+        assertThat(readOnly.effectiveCacheWritePerMtok()).isEqualByComparingTo("3.00");
+    }
+
+    @Test
+    @DisplayName("should reject negative cache rates")
+    void shouldRejectNegativeCacheRates() {
+        assertThatIllegalArgumentException().isThrownBy(() -> new ModelPrice("m", Set.of(), BigDecimal.ONE,
+                BigDecimal.ONE, null, new BigDecimal("-0.1"), null)).withMessageContaining("cacheReadPerMtok");
+        assertThatIllegalArgumentException().isThrownBy(() -> new ModelPrice("m", Set.of(), BigDecimal.ONE,
+                BigDecimal.ONE, null, null, new BigDecimal("-0.1"))).withMessageContaining("cacheWritePerMtok");
+    }
 }

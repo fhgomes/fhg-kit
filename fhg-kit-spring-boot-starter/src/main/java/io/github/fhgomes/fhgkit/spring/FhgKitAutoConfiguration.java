@@ -80,7 +80,9 @@ public class FhgKitAutoConfiguration {
                         new LinkedHashSet<>(entry.getAliases()),
                         entry.getInputPerMtok(),
                         entry.getOutputPerMtok(),
-                        entry.getContextWindow()));
+                        entry.getContextWindow(),
+                        entry.getCacheReadPerMtok(),
+                        entry.getCacheWritePerMtok()));
             }
             String source = pricing.getSource() != null ? pricing.getSource() : DEFAULT_PRICING_SOURCE;
             LocalDate asOf = pricing.getAsOf() != null ? pricing.getAsOf() : LocalDate.now(Clock.systemUTC());

@@ -19,13 +19,19 @@ import org.jspecify.annotations.Nullable;
  * @param inputPerMtok  price of one million input tokens, never negative
  * @param outputPerMtok price of one million output tokens, never negative
  * @param contextWindow maximum context size in tokens, when known; positive
+ * @param cacheReadPerMtok  price of one million input tokens served from the prompt cache, or {@code null} when
+ *                          not declared (then the input rate applies, see {@link #effectiveCacheReadPerMtok()})
+ * @param cacheWritePerMtok price of one million input tokens written to the prompt cache, or {@code null} when
+ *                          not declared (then the input rate applies, see {@link #effectiveCacheWritePerMtok()})
  */
 public record ModelPrice(
         String id,
         Set<String> aliases,
         BigDecimal inputPerMtok,
         BigDecimal outputPerMtok,
-        @Nullable Integer contextWindow) {
+        @Nullable Integer contextWindow,
+        @Nullable BigDecimal cacheReadPerMtok,
+        @Nullable BigDecimal cacheWritePerMtok) {
 
     /**
      * Validates and normalizes the entry.
@@ -52,6 +58,38 @@ public record ModelPrice(
         if (contextWindow != null && contextWindow <= 0) {
             throw new IllegalArgumentException("contextWindow of " + id + " must be positive, got " + contextWindow);
         }
+        if (cacheReadPerMtok != null) {
+            Checks.requireNonNegative(cacheReadPerMtok, "cacheReadPerMtok of " + id);
+        }
+        if (cacheWritePerMtok != null) {
+            Checks.requireNonNegative(cacheWritePerMtok, "cacheWritePerMtok of " + id);
+        }
+    }
+
+    /** Price without cache rates (the 0.1 and 0.2 shape): cache tokens are priced at the input rate. */
+    public ModelPrice(
+            String id,
+            Set<String> aliases,
+            BigDecimal inputPerMtok,
+            BigDecimal outputPerMtok,
+            @Nullable Integer contextWindow) {
+        this(id, aliases, inputPerMtok, outputPerMtok, contextWindow, null, null);
+    }
+
+    /** Rate for cache-read tokens: the declared one, or the input rate when none is declared (never cheaper by guess). */
+    public BigDecimal effectiveCacheReadPerMtok() {
+        return cacheReadPerMtok != null ? cacheReadPerMtok : inputPerMtok;
+    }
+
+    /** Rate for cache-write tokens: the declared one, or the input rate when none is declared (never cheaper by guess). */
+    public BigDecimal effectiveCacheWritePerMtok() {
+        return cacheWritePerMtok != null ? cacheWritePerMtok : inputPerMtok;
+    }
+
+    /** A copy of this price with the given cache rates ({@code null} = not declared). */
+    public ModelPrice withCacheRates(@Nullable BigDecimal cacheReadPerMtok, @Nullable BigDecimal cacheWritePerMtok) {
+        return new ModelPrice(id, aliases, inputPerMtok, outputPerMtok, contextWindow, cacheReadPerMtok,
+                cacheWritePerMtok);
     }
 
     /** Convenience for a price without aliases or context window. */

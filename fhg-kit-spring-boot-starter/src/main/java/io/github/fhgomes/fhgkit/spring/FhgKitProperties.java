@@ -26,6 +26,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *             input-per-mtok: 3.00
  *             output-per-mtok: 15.00
  *             context-window: 128000
+ *             cache-read-per-mtok: 0.30    # optional; absent = input rate
+ *             cache-write-per-mtok: 3.75   # optional; absent = input rate
  * </pre>
  */
 @ConfigurationProperties(prefix = "fhg.kit")
@@ -137,6 +139,12 @@ public class FhgKitProperties {
         /** Maximum context size in tokens, when known. */
         private @Nullable Integer contextWindow;
 
+        /** Price of one million prompt-cache read tokens. Optional; absent means the input rate applies. */
+        private @Nullable BigDecimal cacheReadPerMtok;
+
+        /** Price of one million prompt-cache write tokens. Optional; absent means the input rate applies. */
+        private @Nullable BigDecimal cacheWritePerMtok;
+
         public @Nullable String getId() {
             return id;
         }
@@ -175,6 +183,22 @@ public class FhgKitProperties {
 
         public void setContextWindow(@Nullable Integer contextWindow) {
             this.contextWindow = contextWindow;
+        }
+
+        public @Nullable BigDecimal getCacheReadPerMtok() {
+            return cacheReadPerMtok;
+        }
+
+        public void setCacheReadPerMtok(@Nullable BigDecimal cacheReadPerMtok) {
+            this.cacheReadPerMtok = cacheReadPerMtok;
+        }
+
+        public @Nullable BigDecimal getCacheWritePerMtok() {
+            return cacheWritePerMtok;
+        }
+
+        public void setCacheWritePerMtok(@Nullable BigDecimal cacheWritePerMtok) {
+            this.cacheWritePerMtok = cacheWritePerMtok;
         }
     }
 }
